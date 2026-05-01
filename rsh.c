@@ -6,6 +6,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <signal.h>
 
 #define N 13
 
@@ -31,13 +32,25 @@ void sendmsg (char *user, char *target, char *msg) {
 	// Send a request to the server to send the message (msg) to the target user (target)
 	// by creating the message structure and writing it to server's FIFO
 
+	// builds a message from the arguments passed
+	struct message req;
+	strcpy(req.source, user);
+	strcpy(req.target, target);
+	strcpy(req.msg, msg);
 
+	// opens FIFO for writing
+	int serverfd = open("serverFIFO", O_WRONLY);
 
+	// If opens fails, print an error and return
+	if (serverfd < 0) {
+		perror("open serverFIFO");
+		return;
+	}
 
-
-
-
-
+	// writes the message as raw bytes into the FIFO which the server will read on the other end
+	write(serverfd, &req, sizeof(struct message));
+	// closes server file descriptor
+	close(serverfd);
 }
 
 void* messageListener(void *arg) {
@@ -49,11 +62,27 @@ void* messageListener(void *arg) {
 	// Incoming message from [source]: [message]
 	// put an end of line at the end of the message
 
+	// Opens user's personal FIFO for reading message
+	int fd = open(uName, O_RDONLY);
+	// Opens the same FIFO
+	// FIFO blocks on open if both a reader and writer haven't opened it
+	// bascially a bypass
+	int dummyfd = open(uName, O_WRONLY);
 
+	// blocks until a message struct arrives, nread is number of bytes
+	struct message req;
 
+	while(1){
+		int nread = read(fd, &req, sizeof(struct message));
+		if (nread > 0) {
+			// if data arrived, prints then flushes since stdout may be line-buffered
+			printf("Incoming message from %s: %s\n", req.source, req.msg);
+			fflush(stdout);
+		}
+	}
 
-
-
+	close(fd);
+	close(dummyfd);
 	pthread_exit((void*)0);
 }
 
@@ -86,9 +115,8 @@ int main(int argc, char **argv) {
     // TODO:
     // create the message listener thread
 
-
-
-
+	pthread_t tid;
+	pthread_create(&tid, NULL, messageListener, NULL);
 
     while (1) {
 
@@ -124,15 +152,19 @@ int main(int argc, char **argv) {
 		// if no message is specified, you should print the followingA
  		// printf("sendmsg: you have to enter a message\n");
 
+		char *target = strtok(NULL, " ");
+		if(target == NULL){
+			printf("sendmsg: you have to specify target user\n");
+			continue;
+		}
 
+		char *msg = strtok(NULL, "\n");
+		if(msg == NULL){
+			printf("sendmsg: you have to enter a message\n");
+			continue;
+		}
 
-
-
-
-
-
-
-
+		sendmsg(uName, target, msg);
 		continue;
 	}
 
